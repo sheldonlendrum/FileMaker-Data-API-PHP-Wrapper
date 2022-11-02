@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-
 #  FileMaker-Data-API-PHP-Wrapper
 
 This PHP class wraps the RestFM.php class by https://www.sosimplesoftware.com
@@ -92,6 +90,3 @@ it also supports local file based caching.
 Based on
 https://github.com/kdoronzio/fmREST.php
 http://www.sosimplesoftware.com/fmrest.php
-=======
-# FileMaker-Data-API-PHP-Wrapper
->>>>>>> 76108e807bd42d05e40c69c77fac3de3032633f1
