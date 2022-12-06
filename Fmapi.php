@@ -166,11 +166,49 @@
 		}
 
 
-		public function container($url = NULL)
+
+
+		public function container($container_url = NULL)
 		{
+			if(empty($container_url)) return FALSE;
 
-			// To-do
+			$cookie = tempnam(sys_get_temp_dir(), "CURLCOOKIE");
 
+			$ch = curl_init($container_url);
+			curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+			if ($this->secure)  {
+				curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);
+			} else {
+				curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+			}
+			$first = curl_exec($ch);
+			if(curl_errno($ch)!==0){
+				$errMsg = curl_error($ch);
+				$this->errors[] = 'Error in creating cookie file. '. $errMsg;
+				return FALSE;
+			}
+
+			$ch = curl_init($container_url);
+			curl_setopt($ch, CURLOPT_COOKIEFILE, $cookie);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+			if ($this->secure)  {
+				curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 1);
+			} else {
+				curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+			}
+			$file_data = curl_exec($ch);
+			if(curl_errno($ch)!==0){
+				$errMsg = curl_error($ch);
+				$this->errors[] = 'Error in downloading content of file. '. $errMsg;
+				return FALSE;
+			}
+
+			return $file_data;
 		}
 
 		private function _reset()

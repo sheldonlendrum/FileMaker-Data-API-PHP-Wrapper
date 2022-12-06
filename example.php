@@ -32,6 +32,23 @@
 		// single object or FALSE
 
 
+	// Display a users avatar fomr a container field.
+	$avatar = $db->container($user->avatar_container);
+
+	if(!empty($avatar)) {
+
+		// render display
+		if(strpos($user->avatar_container, '.jpeg') !== FALSE) header('Content-type: image/jpeg');
+		if(strpos($user->avatar_container, '.jpg') !== FALSE) header('Content-type: image/jpeg');
+		if(strpos($user->avatar_container, '.png') !== FALSE) header('Content-type: image/png');
+		if(strpos($user->avatar_container, '.gif') !== FALSE) header('Content-type: image/gif');
+		echo $avatar;
+		die;
+
+
+		// display inline
+		echo '<imgh src="data:image/jpeg;base64,'. base64_encode($avatar) .'" alt="'. $user->first_name .'" />';
+	}
 
 
 
