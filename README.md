@@ -7,6 +7,9 @@ This was developed to by used in a [CodeIgniter](https://codeigniter.com/) 3 pro
 The query builder syntax supports method chaining or simple queries.
 it also supports local file based caching.
 
+## Examples
+See the ```example.php``` file for more examples or some simple usage examples below.
+
 ## Basic setup queries
 ```
 	$db = new Fmapi();
