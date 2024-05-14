@@ -1,51 +1,95 @@
 <?php
 
-	/*
-
-		Sheldon Lendrum
-		FileMaker-Data-API-PHP-Wrapper
-
-	*/
-
-
+	/**
+	 * FileMaker-Data-API-PHP-Wrapper
+	 * Sheldon Lendrum
+	 */
 	class Fmapi {
 
 		public $host = '';
-		public $db = '';
+		public $db   = '';
 		public $user = '';
 		public $pass = '';
 
 		public $version = 'vLatest';
-		public $fmversion = 19;
+		public $fm_version = 20;
 		public $layout = '';
+		public $result = [];
 
-		public $cache_hours = 0;
-		public $cache_name = FALSE;
-		public $cache_path = FALSE;
-		public $cache_bust = FALSE;
+		public $where    = [];
+		public $order_by = [];
+		public $offset   = [];
+		public $limit    = [];
 
-		public $secure = FALSE;
-		public $token_name = 'fmtoken';
-		public $show_debug = FALSE; //  'HTML';
+		public $timeout = 8;
+
+		public $secure = TRUE;
+		public $token_name = 'fm_token';
+		public $show_debug = FALSE; //'html';
 
 		public $queries = [];
 		public $errors = [];
 		public $debug_array = [];
 
+		/**
+		 * Caching setup;
+		 */
+		 public $cache_hours = 0;
+		 public $cache_object = [];
+		 public $cache_bust = FALSE;
+		 public $cache = FALSE; 
+ 
+		 /**
+		  * Supported caching methods:
+		  * - 'file'
+		  * - 'mongodb'
+		  */
+		 public $cache_type = FALSE; 
+ 
+		 /**
+		  * For file based caching, 
+		  * eg: '../storage/';
+		  */
+		 public $cache_path = FALSE; 
 
 
-
-
+        /**
+         * MongoDB Database connection string
+         * only required for Mongo connections.
+         */
+        protected $cache_mongodb_dsn = '';
 
 		public function __construct()
 		{
 			$this->_reset();
 
+			if(!empty($this->cache_type)) {
+
+				if(file_exists('Fmapi_cache.php')) {
+					require_once 'Fmapi_cache.php';
+
+					if($this->cache_type == 'file') {
+						$this->cache = new Fmapi_cache();
+						$this->cache
+							->type($this->cache_type)
+							->path($this->cache_path);
+					}
+
+					if($this->cache_type == 'mongodb') {
+						$this->cache = new Fmapi_cache();
+						$this->cache
+							->type($this->cache_type)
+							->dsn($this->cache_mongodb_dsn);
+					}
+
+				}
+
+			}
 		}
 
-		public function host($host = NULL)
+		public function debug($show_debug = NULL)
 		{
-			$this->host = $host;
+			$this->show_debug = $show_debug;
 			return $this;
 		}
 
@@ -61,15 +105,21 @@
 			return $this;
 		}
 
+		public function host($host = NULL)
+		{
+			$this->host = $host;
+			return $this;
+		}
+
 		public function pass($pass = NULL)
 		{
 			$this->pass = $pass;
 			return $this;
 		}
 
-		public function cache_path($cache_path = NULL)
+		public function timeout($timeout = NULL)
 		{
-			$this->cache_path = $cache_path;
+			$this->timeout = (int)$timeout;
 			return $this;
 		}
 
@@ -89,7 +139,6 @@
 			return $this;
 		}
 
-
 		public function bust($bust = FALSE)
 		{
 			$this->cache_bust = $bust;
@@ -97,20 +146,16 @@
 			return $this;
 		}
 
-
-
 		public function order_by($field, $direction)
 		{
-
 			$this->order_by[$field] = $direction;
 			return $this;
 		}
 
 		public function get($layout)
 		{
-			$this->result = FALSE;
+			$this->result = [];
 			$this->layout = $layout;
-			$this->cache_name = "SELECT FROM {$layout}";
 			$this->_query();
 			return $this;
 		}
@@ -118,11 +163,6 @@
 		public function update($layout, $update_data, $fm_id)
 		{
 			return $this->editRecord($fm_id, ['fieldData' => $update_data], $layout);
-		}
-
-		public function script($layout, $script_name, $script_params = NULL)
-		{
-			return $this->executeScript($script_name, json_encode($script_params), $layout);
 		}
 
 		public function insert($layout, $create_data)
@@ -143,6 +183,13 @@
 
 		}
 
+		public function offset($offset = 1)
+		{
+			$this->offset = $offset;
+			return $this;
+
+		}
+
 		public function limit($limit = 1)
 		{
 			$this->limit = $limit;
@@ -152,7 +199,7 @@
 
 		public function row()
 		{
-
+			$this->_reset();
 			if(empty($this->result)) return FALSE;
 			return reset($this->result);
 
@@ -160,15 +207,14 @@
 
 		public function result()
 		{
+			$this->_reset();
 			if(empty($this->result)) return FALSE;
 			return $this->result;
 
 		}
 
 
-
-
-		public function container($container_url = NULL)
+		public function container($container_url = NULL, $cache_name = NULL)
 		{
 			if(empty($container_url)) return FALSE;
 
@@ -184,10 +230,12 @@
 				curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 				curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 			}
-			$first = curl_exec($ch);
+			
+			curl_exec($ch);
+
 			if(curl_errno($ch)!==0){
-				$errMsg = curl_error($ch);
-				$this->errors[] = 'Error in creating cookie file. '. $errMsg;
+				$error_message = curl_error($ch);
+				$this->errors[] = 'Error in creating cookie file. '. $error_message;
 				return FALSE;
 			}
 
@@ -203,26 +251,36 @@
 			}
 			$file_data = curl_exec($ch);
 			if(curl_errno($ch)!==0){
-				$errMsg = curl_error($ch);
-				$this->errors[] = 'Error in downloading content of file. '. $errMsg;
+				$error_message = curl_error($ch);
+				$this->errors[] = 'Error in downloading content of file. '. $error_message;
 				return FALSE;
 			}
 
 			return $file_data;
 		}
 
+
+		public function reset()
+		{
+			$this->_reset();
+			return $this;
+		}
+
 		private function _reset()
 		{
 			$this->where = [];
+			$this->order_by = [];
+			$this->offset = 1;
 			$this->limit = 99999;
+			$this->timeout = 30;
 			$this->cache_hours = 0;
-			$this->cache_name = FALSE;
+			$this->result = [];
+			$this->cache_object = [];
 			$this->cache_bust = FALSE;
 		}
 
 		private function _query()
 		{
-
 
 			$login = $this->login();
 			if(!$this->checkValidLogin($login)) return $login;
@@ -230,81 +288,139 @@
 			$data = [];
 
 			if(empty($this->where)) {
+				
+				$order_string = '';
+				if(!empty($this->order_by)) {
+					$sort = [];
+					foreach($this->order_by as $f => $d) {
+						$order_string .= "{$f}_{$d}__";
+						$sort[] = [
+							'fieldName' => $f,
+							'sortOrder' => ($d == 'ASC' ? 'ascend' : 'descend'),
+						];
+					}
+					$data['sort'] = $sort;
+					$order_string = rtrim($order_string, '_');
+					$order_string = rtrim($order_string, '_');
+					$order_string = trim($order_string);
+				}
 
-				$this->cache_name .= " GET ALL ";
+				$this->cache_object = [
+					'from' => $this->layout,
+					'where' => 'all',
+					'orderby' => $order_string,
+					'offset' => (int)$this->offset,
+					'limit' => (int)$this->limit,
+				];
 
-				$this->queries[] = $this->cache_name;
+
 
 				if($this->is_cached()) {
 					return $this;
 				}
+
+				$data['_offset'] = (int)$this->offset;
+				$data['_limit'] = (int)$this->limit;
+
+				$this->queries['fm'][] = $this->cache_object;
 
 				$result = $this->getRecords($data, $this->layout);
 			} else {
 
-				$this->cache_name .= " WHERE ";
+				$where_string = '';
 				foreach($this->where as $f => $v) {
-					$this->cache_name .= " `{$f}` = '{$v}' AND ";
+					$where_string .= "{$f}_{$v}__";
 				}
-				$query = [$this->where];
-				$this->cache_name .= ' LIMIT = '. $this->limit;
+				$where_string = rtrim($where_string, '_');
+				$where_string = rtrim($where_string, '_');
+				$where_string = trim($where_string);
 
-				$this->queries[] = $this->cache_name;
+				$query = [$this->where];
+
+				$order_string = '';
+				if(!empty($this->order_by)) {
+					$sort = [];
+					foreach($this->order_by as $f => $d) {
+						$order_string .= "{$f}_{$d}__";
+						$sort[] = [
+							'fieldName' => $f,
+							'sortOrder' => ($d == 'ASC' ? 'ascend' : 'descend'),
+						];
+					}
+					$data['sort'] = $sort;
+					$order_string = rtrim($order_string, '_');
+					$order_string = rtrim($order_string, '_');
+					$order_string = trim($order_string);
+				}
+
+
+				$this->cache_object = [
+					'from' => $this->layout,
+					'where' => $where_string,
+					'orderby' => (!empty($order_string) ? $order_string : 'none'),
+					'offset' => (int)$this->offset,
+					'limit' => (int)$this->limit,
+				];
 
 				if($this->is_cached()) {
 					return $this;
 				}
 
-				$data['limit'] = (int)$this->limit;
+				$last_query = "SELECT FROM `{$this->layout}` WHERE ";
+				foreach($this->where as $f => $v) {
+					$last_query .= " `{$f}` = '{$v}' AND ";
+				}
+				$last_query = rtrim($last_query, ' AND ');
+				if(!empty($this->order_by)) {
+					$last_query .= " ORDER BY ";
+					foreach($this->order_by as $f => $d) {
+						$last_query .= " `{$f}` {$d} ";
+					}
+				}
+				$last_query .= " LIMIT  ". (int)$this->offset .', '. (int)$this->limit;
+				
+				$this->queries['fm'][] = $last_query;
+
+				// $data['limit'] = (int)$this->limit;
+				// $data['range'] = (int)$this->limit;
 				$data['query'] = $query;
 				$result = $this->findRecords($data, $this->layout);
 			}
 
-			$cache_hours = $this->cache_hours;
-			$cache_name  = $this->cache_name;
-
-			if(!empty($result['messages'][0]['message']) and ($result['messages'][0]['message'] == 'OK')) {
+			if(!empty($result['messages'][0]['message']) and ($result['messages'][0]['message'] == 'OK' or $result['messages'][0]['code'] == '401')) {
 
 				$this->result = [];
-				$result = $result['response']['data'];
+		
+				if(!empty($result['response']['data'])) {
+						
+					$result = $result['response']['data'];
 
-				foreach($result as $record) {
+					foreach($result as $record) {
 
-					$row = new StdClass;
+						$row = new StdClass;
 
-					// transpose repition fields.
-					foreach($record['fieldData'] as $field => $value) {
-						// $row->{$field} = $value;
-						$field = str_replace('::', '____', $field);
-						if(strpos($field, '(') !== FALSE) {
-							$num = explode('(', $field);
-							$num = end($num);
-							$num = str_replace(')', '', $num);
-
-							$field = str_replace('('.$num.')', '', $field);
-
-							if(empty($row->{$field})) {
-								$row->{$field} = array();
-							}
-
-							$row->{$field}[$num] = $value;
-						} else {
+						// transpose repetition fields.
+						foreach($record['fieldData'] as $field => $value) {
+							$field = str_replace('(', '__', $field);
+							$field = str_replace(')', '', $field);
 							$row->{$field} = $value;
 						}
+						$row->id = $record['recordId'];
+
+						$this->result[$row->id] = $row;
+
 					}
-					$row->id = $record['recordId'];
-
-					$this->result[$row->id] = $row;
-
 				}
 
+				if(!empty($this->cache_hours) and !empty($this->cache_object)) {
 
-				if(!empty($this->cache_hours) and !empty($this->cache_name)) {
-
-					$cache_file = $this->sanatise_cache($this->cache_name ,'_', TRUE);
-					$cache_path = $this->cache_path . $cache_file .'.json';
-
-					file_put_contents($cache_path, json_encode($this->result));
+					if($this->cache_type !== FALSE) {
+						$this->cache
+							->expires($this->cache_hours)
+							->query($this->cache_object)
+							->result($this->result)
+							->store();
+					}
 
 				}
 
@@ -314,11 +430,9 @@
 
 			}
 
-			$this->errors[] = $result['messages'][0]['message'];
+			$this->errors[] = $result; 
 
 			if(!empty($this->errors)) {
-
-				// echo '<pre>'; print_r(['query error:', $this->errors]); die('<br><br>File: '. __FILE__ .'<br>Line: '. __LINE__);
 
 			}
 
@@ -327,82 +441,23 @@
 		}
 
 
-		private function sanatise_cache($file_name = NULL)
-		{
-
-			// if empty - return a random filename
-			if(empty($file_name)) return uniqid() . time();
-
-			$filename_bad_chars = [
-				'../', '<!--', '-->', '<', '>',
-				"'", '"', '&', '$', '#',
-				'{', '}', '[', ']', '=',
-				';', '?', '%20', '%22',
-				'%3c',		// <
-				'%253c',	// <
-				'%3e',		// >
-				'%0e',		// >
-				'%28',		// (
-				'%29',		// )
-				'%2528',	// (
-				'%26',		// &
-				'%24',		// $
-				'%3f',		// ?
-				'%3b',		// ;
-				'%3d',		// =
-				'./',
-				'/',
-			];
-
-			$non_displayables = [];
-			$non_displayables[] = '/%0[0-8bcef]/i';	// url encoded 00-08, 11, 12, 14, 15
-			$non_displayables[] = '/%1[0-9a-f]/i';	// url encoded 16-31
-			$non_displayables[] = '/%7f/i';	// url encoded 127
-			$non_displayables[] = '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+/S';	// 00-08, 11, 12, 14-31, 127
-
-			do {
-				$file_name = preg_replace($non_displayables, '', $file_name, -1, $count);
-			} while ($count);
-
-			do {
-				$old = $file_name;
-				$file_name = str_replace($filename_bad_chars, '', $file_name);
-			} while ($old !== $file_name);
-
-			return stripslashes($file_name);
-		}
-
-
 		private function is_cached()
 		{
 
-			if(empty($this->cache)) return FALSE;
-			if(empty($this->cache_name)) return FALSE;
+			if(empty($this->cache_object)) return FALSE;
 
-			$cache_name = $this->sanatise_cache($this->cache_name ,'_', TRUE) .'.json';
 
-			$this->cache_name = FALSE;
-
-			if(!file_exists($this->cache_path . $cache_name)) {
-				return FALSE;
+			if($this->cache_type !== FALSE) {
+				
+				$this->result = $this->cache
+					->bust($this->cache_bust)
+					->query($this->cache_object)
+					->retrieve();
 			}
 
-			if($this->cache_bust === TRUE) {
-				unlink($this->cache_path . $cache_name);
-				return FALSE;
+			if(empty($this->result)) {
+				$this->result = [];
 			}
-
-			$filemtime = filemtime($this->cache_path . $cache_name);
-
-			if(time() - $filemtime > $this->cache) {
-				unlink($this->cache_path . $this->cache_name);
-				return FALSE;
-			}
-
-			$cached_json = file_get_contents($this->cache_path . $cache_name);
-			$cached_json = json_decode($cached_json);
-
-			$this->result = $cached_json;
 
 			return $this;
 
@@ -474,10 +529,17 @@
 
 
 
-		// FROM HERE  - THIS IS THE RESTMP.PHP CLASS BY SO SIMPLE SOFTWARE
 
+	/*
+
+		Based on
+		https://github.com/kdoronzio/fmREST.php
+		http://www.sosimplesoftware.com/fmrest.php
+
+
+	*/
 		public function productInfo () {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			$url = "https://" . $this->host . "/fmi/data/".$this->version."/productInfo";
 			$result = $this->callCURL ($url, 'GET');
 			$this->updateDebug ('productInfo result', $result);
@@ -485,7 +547,7 @@
 		}
 
 		public function databaseNames () { //doesn't work when you're logged in (because both basic & bearer headers are sent)
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			$url = "https://" . $this->host . "/fmi/data/".$this->version."/databases";
 			$header = "Authorization: Basic " . base64_encode ($this->user . ':' . $this->pass);
 			$result = $this->callCURL ($url, 'GET', array(), array ($header));
@@ -494,7 +556,7 @@
 		}
 
 		public function layoutNames () {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			$login = $this->login();
 			if (!$this->checkValidLogin($login)) return $login;
 
@@ -512,7 +574,7 @@
 		}
 
 		public function scriptNames () {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			$login = $this->login();
 			if (!$this->checkValidLogin($login)) return $login;
 
@@ -529,7 +591,7 @@
 		}
 
 		public function layoutMetadata ( $layout = NULL ) {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			if (empty ($layout)) $layout = $this->layout;
 
 			$login = $this->login();
@@ -548,7 +610,7 @@
 		}
 
 		public function oldLayoutMetadata ( $layout = NULL ) {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			if (empty ($layout)) $layout = $this->layout;
 
 			$login = $this->login();
@@ -649,7 +711,7 @@
 
 
 		public function executeScript ( $scriptName, $scriptParameter, $layout=NULL ) {
-			if ($this->fmversion < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
+			if ($this->fm_version < 18) return $this->throwRestError (-1, "This public function is not supported in FileMaker 17");
 			if (empty ($layout)) $layout = $this->layout;
 			$login = $this->login();
 			if (!$this->checkValidLogin($login)) return $login;

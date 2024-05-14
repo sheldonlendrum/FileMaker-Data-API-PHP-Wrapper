@@ -32,7 +32,7 @@
 		// single object or FALSE
 
 
-	// Display a users avatar fomr a container field.
+	// Display a users avatar from a container field.
 	$avatar = $db->container($user->avatar_container);
 
 	if(!empty($avatar)) {
@@ -54,7 +54,7 @@
 
 
 	// Code Igniter 3
-	// Copy Fmapi.php to yuor application/libraries Directory
+	// Copy Fmapi.php to your application/libraries Directory
 	$this->load->library('fmapi');
 	$this->load->library('form_validation');
 

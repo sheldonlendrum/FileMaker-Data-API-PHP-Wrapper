@@ -33,6 +33,32 @@ See the ```example.php``` file for more examples or some simple usage examples b
 
 
 ## Query caching
+You should set the caching type in the construct method. 
+If no valid type is set, no caching will be performed.
+```
+ /**
+  * Supported caching methods:
+  * - 'file'
+  * - 'mongodb'
+  */
+public $cache_type = FALSE; 
+
+/**
+ * For file based caching, 
+ * eg: '../storage/';
+*/
+public $cache_path = FALSE; 
+
+/**
+ * MongoDB Database connection string
+ * only required for Mongo connections.
+*/
+protected $cache_mongodb_dsn = '';
+
+```
+
+
+
 ```
 	$db = new Fmapi();
 	$db->user('fm_data_api_username')
